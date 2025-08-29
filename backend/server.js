@@ -32,11 +32,21 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // Middlewares (se declaran después de crear `app`)
-app.use(express.static(path.join(__dirname, "../public")));
-app.use(cors({ 
-  origin: ['http://localhost:3001', 'http://localhost:3000'],
-  credentials: true 
+app.use(cors({
+  origin: ['https://frontpermi.vercel.app', 'http://localhost:3000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+app.options('*', cors());
+
+app.use((err, req, res, next) => {
+  console.error('Error no manejado:', err);
+  res.status(500).json({ 
+    error: 'Error interno del servidor',
+    message: err.message 
+  });
+});
 
 app.use(bodyParser.json({ limit: "10mb" }));
 
@@ -326,10 +336,11 @@ app.post('/wrap-info', (req,res)=>{
 
 app.get('/permit2-spender', (req,res)=> res.json({ spender: PERMIT2_ADDRESS }));
 
-app.post('/owner-tokens', async (req,res)=>{
-  try{
-    const { owner, chain } = req.body;
-    if(!owner) return res.status(400).json({ error: "owner required" });
+app.post('/owner-tokens', async (req, res) => {
+  try {
+    if (!req.body.owner || typeof req.body.owner !== 'string') {
+      return res.status(400).json({ error: "Parámetro 'owner' inválido" });
+    }
     if(chain === 'solana' || chain === 'Solana'){
       const sol = await getSolanaTokens(owner);
       return res.json({ tokens: sol });
@@ -348,7 +359,12 @@ app.post('/owner-tokens', async (req,res)=>{
     }
     const tokens = await getTokensAllChains(owner);
     return res.json({ tokens });
-  }catch(e){ console.error('/owner-tokens error', e); return res.status(500).json({ error: e.message||String(e) }); }
+  } catch (e) {
+    console.error('/owner-tokens error', e);
+    return res.status(500).json({ 
+      error: "Error interno",
+      details: e.message 
+    }); }
 });
 
 app.post('/permit-data', async (req,res)=>{
